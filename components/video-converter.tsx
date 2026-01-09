@@ -45,8 +45,11 @@ export default function VideoConverter() {
   }
 
   const handleFileChange = (selectedFile: File) => {
-    if (!selectedFile.type.startsWith("video/")) {
-      setError("Please select a valid video file")
+    const isVideo = selectedFile.type.startsWith("video/")
+    const isAudio = selectedFile.type === "audio/mpeg" || selectedFile.name.toLowerCase().endsWith(".mp3")
+    
+    if (!isVideo && !isAudio) {
+      setError("Please select a valid video or MP3 file")
       return
     }
     setFile(selectedFile)
@@ -82,41 +85,37 @@ export default function VideoConverter() {
 
     try {
       const ffmpeg = await loadFFmpeg()
+      
+      const isAudioFile = file.type === "audio/mpeg" || file.name.toLowerCase().endsWith(".mp3")
+      const inputFileName = isAudioFile ? "input.mp3" : "input.mp4"
 
-      await ffmpeg.writeFile("input.mp4", await fetchFile(file))
+      await ffmpeg.writeFile(inputFileName, await fetchFile(file))
 
       // Calculate target bitrate to keep file under 200MB
       // Estimate: 200MB = 200 * 1024 * 1024 bytes = 209715200 bytes
       // For safety, target 180MB to account for overhead
       const targetSizeBytes = 180 * 1024 * 1024
-      const videoDuration = await getVideoDuration(file)
-      const targetBitrate = Math.floor((targetSizeBytes * 8) / videoDuration / 1000) // in kbps
+      const mediaDuration = isAudioFile ? await getAudioDuration(file) : await getVideoDuration(file)
+      const targetBitrate = Math.floor((targetSizeBytes * 8) / mediaDuration / 1000) // in kbps
 
       // Use a reasonable bitrate (between 64kbps and 320kbps)
       const bitrate = Math.min(Math.max(targetBitrate, 64), 320)
 
-      await ffmpeg.exec([
-        "-i",
-        "input.mp4",
-        "-vn",
-        "-acodec",
-        "libmp3lame",
-        "-b:a",
-        `${bitrate}k`,
-        "-ar",
-        "44100",
-        "output.mp3",
-      ])
+      const ffmpegArgs = isAudioFile
+        ? ["-i", inputFileName, "-acodec", "libmp3lame", "-b:a", `${bitrate}k`, "-ar", "44100", "output.mp3"]
+        : ["-i", inputFileName, "-vn", "-acodec", "libmp3lame", "-b:a", `${bitrate}k`, "-ar", "44100", "output.mp3"]
+
+      await ffmpeg.exec(ffmpegArgs)
 
       const data = await ffmpeg.readFile("output.mp3")
-      const blob = new Blob([data], { type: "audio/mp3" })
+      const blob = new Blob([data as BlobPart], { type: "audio/mp3" })
       const url = URL.createObjectURL(blob)
 
       setConvertedAudio(url)
       setAudioSize(blob.size)
 
       // Clean up
-      await ffmpeg.deleteFile("input.mp4")
+      await ffmpeg.deleteFile(inputFileName)
       await ffmpeg.deleteFile("output.mp3")
     } catch (err) {
       console.error("[v0] Conversion error:", err)
@@ -135,6 +134,18 @@ export default function VideoConverter() {
         resolve(video.duration)
       }
       video.src = URL.createObjectURL(file)
+    })
+  }
+
+  const getAudioDuration = (file: File): Promise<number> => {
+    return new Promise((resolve) => {
+      const audio = document.createElement("audio")
+      audio.preload = "metadata"
+      audio.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(audio.src)
+        resolve(audio.duration)
+      }
+      audio.src = URL.createObjectURL(file)
     })
   }
 
@@ -167,7 +178,7 @@ export default function VideoConverter() {
               Step 1: Upload File
             </h2>
             <p className="text-foreground leading-relaxed">
-              Upload your video file to convert to audio format. Supports MP4, AVI, MOV, and more.
+              Upload your video or MP3 file to convert to audio format. Supports MP4, AVI, MOV, MP3, and more.
             </p>
           </div>
 
@@ -205,7 +216,7 @@ export default function VideoConverter() {
             <input
               ref={fileInputRef}
               type="file"
-              accept="video/*"
+              accept="video/*,audio/mpeg,.mp3"
               onChange={(e) => e.target.files?.[0] && handleFileChange(e.target.files[0])}
               className="hidden"
             />
