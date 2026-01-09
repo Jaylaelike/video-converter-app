@@ -91,15 +91,14 @@ export default function VideoConverter() {
 
       await ffmpeg.writeFile(inputFileName, await fetchFile(file))
 
-      // Calculate target bitrate to keep file under 200MB
-      // Estimate: 200MB = 200 * 1024 * 1024 bytes = 209715200 bytes
-      // For safety, target 180MB to account for overhead
-      const targetSizeBytes = 180 * 1024 * 1024
+      // Calculate target bitrate to ensure output is smaller than input
+      // Target 80% of original file size for safety margin
+      const targetSizeBytes = Math.floor(file.size * 0.8)
       const mediaDuration = isAudioFile ? await getAudioDuration(file) : await getVideoDuration(file)
       const targetBitrate = Math.floor((targetSizeBytes * 8) / mediaDuration / 1000) // in kbps
 
-      // Use a reasonable bitrate (between 64kbps and 320kbps)
-      const bitrate = Math.min(Math.max(targetBitrate, 64), 320)
+      // Use a reasonable bitrate (between 32kbps and 320kbps)
+      const bitrate = Math.min(Math.max(targetBitrate, 32), 320)
 
       const ffmpegArgs = isAudioFile
         ? ["-i", inputFileName, "-acodec", "libmp3lame", "-b:a", `${bitrate}k`, "-ar", "44100", "output.mp3"]
@@ -306,6 +305,14 @@ export default function VideoConverter() {
               <div className="p-4 border-4 border-accent bg-accent/10">
                 <p className="text-foreground font-bold">
                   ⚠️ Note: File size exceeds 200MB. Consider using a shorter video or lower quality settings.
+                </p>
+              </div>
+            )}
+
+            {file && audioSize < file.size && (
+              <div className="p-4 border-4 border-green-500 bg-green-500/10">
+                <p className="text-foreground font-bold">
+                  ✓ Compressed by {Math.round((1 - audioSize / file.size) * 100)}% ({formatFileSize(file.size)} → {formatFileSize(audioSize)})
                 </p>
               </div>
             )}
