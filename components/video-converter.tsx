@@ -91,10 +91,21 @@ export default function VideoConverter() {
 
       await ffmpeg.writeFile(inputFileName, await fetchFile(file))
 
-      // Calculate target bitrate to ensure output is smaller than input
-      // Target 80% of original file size for safety margin
-      const targetSizeBytes = Math.floor(file.size * 0.8)
       const mediaDuration = isAudioFile ? await getAudioDuration(file) : await getVideoDuration(file)
+      
+      // Calculate target size based on input file size
+      // For files >= 500MB: output must be < 200MB (use 180MB for safety)
+      // For smaller files: output should be smaller than input (use 80% of original)
+      const largeFileThreshold = 500 * 1024 * 1024 // 500MB
+      const maxOutputSize = 180 * 1024 * 1024 // 180MB (safety margin for 200MB limit)
+      
+      let targetSizeBytes: number
+      if (file.size >= largeFileThreshold) {
+        targetSizeBytes = maxOutputSize
+      } else {
+        targetSizeBytes = Math.min(Math.floor(file.size * 0.8), maxOutputSize)
+      }
+      
       const targetBitrate = Math.floor((targetSizeBytes * 8) / mediaDuration / 1000) // in kbps
 
       // Use a reasonable bitrate (between 32kbps and 320kbps)
